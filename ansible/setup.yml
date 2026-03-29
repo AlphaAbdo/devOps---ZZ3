@@ -1,0 +1,136 @@
+---
+# Configure la machine hôte pour pouvoir lancer Terraform, kubectl et helm
+# sans intervention manuelle. Testé sur Ubuntu 22.04 / 24.04.
+#
+# Lancer avec :
+#   ansible-playbook -i inventory.ini setup.yml --ask-become-pass
+
+- name: host setup
+  hosts: local
+  become: true
+  vars:
+    kind_version:    "v0.23.0"
+    kubectl_version: "v1.30.0"
+    helm_version:    "v3.15.2"
+    terraform_version: "1.8.5"
+    arch: "amd64"
+
+  tasks:
+    # paquets de base
+    - name: apt cache à jour
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: install des dépendances de base
+      apt:
+        name:
+          - curl
+          - ca-certificates
+          - gnupg
+          - lsb-release
+          - unzip
+          - git
+        state: present
+
+    # docker
+    - name: clé GPG docker
+      shell: |
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+          | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+      args:
+        creates: /etc/apt/keyrings/docker.gpg
+
+    - name: repo apt docker
+      copy:
+        dest: /etc/apt/sources.list.d/docker.list
+        content: >-
+          deb [arch={{ arch }} signed-by=/etc/apt/keyrings/docker.gpg]
+          https://download.docker.com/linux/ubuntu
+          {{ ansible_distribution_release }} stable
+        mode: "0644"
+
+    - name: install docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        update_cache: true
+        state: present
+
+    - name: service docker activé
+      systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    # on ajoute l'utilisateur au groupe docker — faut se re-login pour que ça prenne
+    - name: ajout utilisateur au groupe docker
+      user:
+        name: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
+        groups: docker
+        append: true
+
+    # kind
+    - name: télécharge kind
+      get_url:
+        url: "https://kind.sigs.k8s.io/dl/{{ kind_version }}/kind-linux-{{ arch }}"
+        dest: /usr/local/bin/kind
+        mode: "0755"
+        force: false  # skip si déjà là
+
+    # kubectl
+    - name: télécharge kubectl
+      get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/{{ arch }}/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: "0755"
+        force: false
+
+    # helm
+    - name: vérifie si helm est déjà installé
+      stat:
+        path: /usr/local/bin/helm
+      register: helm_bin
+
+    - name: install helm
+      shell: |
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+          | DESIRED_VERSION="{{ helm_version }}" bash
+      when: not helm_bin.stat.exists
+
+    # terraform
+    - name: vérifie si terraform est déjà installé
+      stat:
+        path: /usr/local/bin/terraform
+      register: tf_bin
+
+    - name: télécharge terraform
+      get_url:
+        url: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_{{ arch }}.zip"
+        dest: /tmp/terraform.zip
+        mode: "0644"
+      when: not tf_bin.stat.exists
+
+    - name: dézip terraform
+      unarchive:
+        src: /tmp/terraform.zip
+        dest: /usr/local/bin/
+        remote_src: true
+        mode: "0755"
+      when: not tf_bin.stat.exists
+
+    # check que tout est bien installé
+    - name: vérifie que les outils sont accessibles
+      command: "{{ item }} version"
+      loop:
+        - docker
+        - kind
+        - kubectl
+        - helm
+        - terraform
+      changed_when: false
+      ignore_errors: false

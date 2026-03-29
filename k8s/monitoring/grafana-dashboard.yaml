@@ -1,0 +1,71 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-pixelwar
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"   # récupéré par le sidecar Grafana de kube-prometheus-stack
+data:
+  pixelwar-dashboard.json: |
+    {
+      "id": null,
+      "uid": "pixelwar-main",
+      "title": "Pixel War",
+      "tags": ["pixelwar"],
+      "timezone": "browser",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-30m", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Pixels placed / sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "rate(pixelwar_pixels_placed_total[1m])",
+              "legendFormat": "placements/s"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Active WebSocket connections",
+          "type": "stat",
+          "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(pixelwar_ws_connections_active)",
+              "legendFormat": "connections"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Heap used (bytes)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "targets": [
+            {
+              "expr": "pixelwar_nodejs_heap_used_bytes",
+              "legendFormat": "{{ instance }}"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Event loop lag (s)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "targets": [
+            {
+              "expr": "rate(pixelwar_nodejs_eventloop_lag_seconds_sum[1m]) / rate(pixelwar_nodejs_eventloop_lag_seconds_count[1m])",
+              "legendFormat": "{{ instance }}"
+            }
+          ]
+        }
+      ]
+    }

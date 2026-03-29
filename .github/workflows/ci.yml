@@ -1,0 +1,150 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # lint
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: hadolint
+        run: |
+          docker run --rm -i \
+            -v "$(pwd)":/work -w /work \
+            hadolint/hadolint:latest \
+            hadolint --failure-threshold warning \
+              app/backend/Dockerfile \
+              app/frontend/Dockerfile
+
+      - name: yamllint
+        run: |
+          pip install yamllint --quiet
+          yamllint -c .yamllint.yml k8s/ ansible/setup.yml
+
+  # build & push
+  build:
+    name: build & push
+    needs: lint
+    runs-on: ubuntu-latest
+    # on push pas les images sur les PR
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: build + push backend
+        uses: docker/build-push-action@v6
+        with:
+          context:   app/backend
+          push:      true
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/pixelwar-backend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/pixelwar-backend:latest
+
+      - name: build + push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context:   app/frontend
+          push:      true
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/pixelwar-frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/pixelwar-frontend:latest
+
+  # deploy — cluster kind éphémère sur le runner GitHub
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    env:
+      OWNER:     ${{ github.repository_owner }}
+      IMAGE_TAG: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: installe kind et kubectl
+        run: |
+          curl -sLo kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+          chmod +x kind && sudo mv kind /usr/local/bin/kind
+          curl -sLO "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: crée le cluster kind
+        run: |
+          cat <<EOF | kind create cluster --config=-
+          apiVersion: kind.x-k8s.io/v1alpha4
+          kind: Cluster
+          nodes:
+            - role: control-plane
+              extraPortMappings:
+                - containerPort: 30080
+                  hostPort: 30080
+          EOF
+
+      - name: log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: charge les images dans kind
+        run: |
+          docker pull ${{ env.REGISTRY }}/$OWNER/pixelwar-backend:$IMAGE_TAG
+          docker pull ${{ env.REGISTRY }}/$OWNER/pixelwar-frontend:$IMAGE_TAG
+          kind load docker-image ${{ env.REGISTRY }}/$OWNER/pixelwar-backend:$IMAGE_TAG
+          kind load docker-image ${{ env.REGISTRY }}/$OWNER/pixelwar-frontend:$IMAGE_TAG
+
+      - name: applique namespace + manifests statiques
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/redis/
+          kubectl apply -f k8s/backend/secret.yaml
+          kubectl apply -f k8s/backend/service.yaml
+          kubectl apply -f k8s/frontend/service.yaml
+          kubectl apply -f k8s/netpol/
+
+      - name: applique deployments
+        run: |
+          envsubst < k8s/backend/deployment.yaml  | kubectl apply -f -
+          envsubst < k8s/frontend/deployment.yaml | kubectl apply -f -
+
+      - name: attend le rollout
+        run: |
+          kubectl rollout status deployment/backend  -n pixelwar --timeout=120s
+          kubectl rollout status deployment/frontend -n pixelwar --timeout=120s
+
+      - name: test de fumée
+        run: |
+          sleep 5
+          curl -sf http://localhost:30080/ > /dev/null
+          echo "frontend joignable"

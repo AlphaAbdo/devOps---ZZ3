@@ -1,0 +1,23 @@
+# terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/kubeconfig
+
+# node
+app/backend/node_modules/
+
+# local env overrides
+.env
+*.local
+
+# editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

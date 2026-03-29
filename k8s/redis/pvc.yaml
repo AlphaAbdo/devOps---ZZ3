@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: pixelwar
+  labels:
+    app: redis
+spec:
+  # kind utilise du hostPath — les données survivent aux restarts de pod
+  # mais sont perdues quand le cluster est détruit (make destroy / fin de job CI)
+  storageClassName: standard
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

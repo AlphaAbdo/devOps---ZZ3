@@ -1,0 +1,13 @@
+---
+# Bloque tout le trafic entrant par défaut dans le namespace.
+# Les règles spécifiques sont dans des fichiers séparés — plus lisible.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-ingress
+  namespace: pixelwar
+spec:
+  podSelector: {}   # matches every pod
+  policyTypes:
+    - Ingress
+    # aucune règle ingress = tout est bloqué

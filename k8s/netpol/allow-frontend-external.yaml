@@ -1,0 +1,18 @@
+---
+# le frontend est public — on autorise toute source.
+# le trafic NodePort est SNATé par kube-proxy sur l'IP du node,
+# du coup on peut pas filtrer par IP client ici ; allow all est le choix pratique.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-external-to-frontend
+  namespace: pixelwar
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 8080

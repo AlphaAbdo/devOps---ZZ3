@@ -1,0 +1,6 @@
+failure-threshold: warning
+ignore:
+  # le pin de version sur apk c'est overkill pour un TP
+  - DL3018
+  # on utilise pas apt-get dans nos Dockerfiles mais on supprime quand même
+  - DL3008

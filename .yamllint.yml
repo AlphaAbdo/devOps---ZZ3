@@ -1,0 +1,24 @@
+---
+extends: default
+
+rules:
+  line-length:
+    max: 160     # le JSON du dashboard Grafana dans la ConfigMap fait exploser les lignes
+    level: warning
+  colons:
+    max-spaces-after: -1   # autorise l'alignement style k8s
+    max-spaces-before: 0
+  comments:
+    min-spaces-from-content: 1
+    require-starting-space: true
+  comments-indentation: disable
+  document-start:
+    present: true
+    level: warning
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+
+ignore: |
+  terraform/
+  .github/workflows/

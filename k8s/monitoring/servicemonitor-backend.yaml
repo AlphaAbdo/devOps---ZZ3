@@ -1,0 +1,24 @@
+---
+# CRD Prometheus Operator — kube-prometheus-stack doit être installé avant.
+# Dit à Prometheus de scraper les pods backend sur /metrics:3000.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend
+  namespace: pixelwar
+  labels:
+    app: backend
+    # l'instance Prometheus de kube-prometheus-stack matche ce label
+    release: kube-prom
+spec:
+  selector:
+    matchLabels:
+      app: backend
+  namespaceSelector:
+    matchNames:
+      - pixelwar
+  endpoints:
+    - port: http         # correspond au port nommé dans backend/service.yaml
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
